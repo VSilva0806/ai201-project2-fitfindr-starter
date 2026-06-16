@@ -150,4 +150,4 @@ The agent synthesizes the filtered listings with wardrobe context into a final l
 
 **Final output to user:**
 <!-- What does the user actually see at the end? -->
-The output is a short list of clothes related to the user's query - a few vintage graphic tees under $30, paired with styling suggestings relevant to baggy jeans and chunky sneakers
+The output is a short list of clothes related to the user's query - a few vintage graphic tees under $30, paired with styling suggestings relevant to baggy jeans and chunky sneakers. If the requested items cannot be found, the model outputs a message stating that those items are unavailable.
