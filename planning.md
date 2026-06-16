@@ -138,12 +138,16 @@ Write out what a full user interaction looks like from start to finish — tool 
 
 **Step 1:**
 <!-- What does the agent do first? Which tool is called? With what input? -->
+The agent recognizes this is a search request and calls load_listings() with no input. 
 
 **Step 2:**
 <!-- What happens next? What was returned from step 1? What tool is called now? -->
+From step 1, the agent returns a list of all available listings. The listings then gets filtered according to the user's query. Agent then calls get_example_wardrobe() to pull context from it.
 
 **Step 3:**
 <!-- Continue until the full interaction is complete -->
+The agent synthesizes the filtered listings with wardrobe context into a final legible response
 
 **Final output to user:**
 <!-- What does the user actually see at the end? -->
+The output is a short list of clothes related to the user's query - a few vintage graphic tees under $30, paired with styling suggestings relevant to baggy jeans and chunky sneakers
