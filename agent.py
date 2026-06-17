@@ -20,7 +20,10 @@ Usage (once implemented):
 
 import re
 
-from tools import search_listings, suggest_outfit, create_fit_card
+from tools import (
+    search_listings, suggest_outfit, create_fit_card, compare_price,
+    load_style_profile, save_style_profile, check_trending_styles,
+)
 
 
 # ── query parser ──────────────────────────────────────────────────────────────
@@ -89,15 +92,32 @@ def _new_session(query: str, wardrobe: dict) -> dict:
         "search_results": [],        # list of matching listing dicts
         "selected_item": None,       # top result, passed into suggest_outfit
         "wardrobe": wardrobe,        # user's wardrobe dict
+        "profile": {},               # loaded style profile for this user
+        "price_assessment": None,    # string returned by compare_price
         "outfit_suggestion": None,   # string returned by suggest_outfit
         "fit_card": None,            # string returned by create_fit_card
+        "trends": None,              # string returned by check_trending_styles
+        "profile_save": None,        # confirmation or error from save_style_profile
+        "fallback_note": None,       # set when search_listings loosened constraints
         "error": None,               # set if the interaction ended early
     }
 
 
+# ── trend query detection ─────────────────────────────────────────────────────
+
+_TREND_PATTERN = re.compile(
+    r"\b(trend|trending|popular|in style|in fashion|what(?:'s| is) hot|"
+    r"what(?:'s| is) in|what(?:'s| is) popular|on trend|aesthetic)\b",
+    re.IGNORECASE,
+)
+
+def _is_trend_query(query: str) -> bool:
+    return bool(_TREND_PATTERN.search(query))
+
+
 # ── planning loop ─────────────────────────────────────────────────────────────
 
-def run_agent(query: str, wardrobe: dict) -> dict:
+def run_agent(query: str, wardrobe: dict, user_id: str = "default") -> dict:
     """
     Main agent entry point. Runs the FitFindr planning loop for a single
     user interaction and returns the completed session dict.
@@ -145,9 +165,17 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     # Step 1: initialize session
     session = _new_session(query, wardrobe)
 
-    # Step 2: parse the query into structured parameters
+    # Step 1b: load persisted style profile for this user
+    session["profile"] = load_style_profile(user_id)
+    profile = session["profile"]
+
+    # Step 2: parse the query; fill any missing fields from the profile
     session["parsed"] = _parse_query(query)
     parsed = session["parsed"]
+    if parsed["size"] is None and profile.get("preferred_size"):
+        parsed["size"] = profile["preferred_size"]
+    if parsed["max_price"] is None and profile.get("max_budget") is not None:
+        parsed["max_price"] = profile["max_budget"]
 
     # Step 3: search for matching listings
     session["search_results"] = search_listings(
@@ -155,9 +183,10 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         size=parsed["size"],
         max_price=parsed["max_price"],
     )
+    session["fallback_note"] = getattr(session["search_results"], "fallback_note", None)
     if not session["search_results"]:
         session["error"] = (
-            f"No listings found matching your request. "
+            "No listings found matching your request. "
             "Try broadening your description, raising your budget, or omitting the size filter."
         )
         return session
@@ -165,10 +194,14 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     # Step 4: select the top result
     session["selected_item"] = session["search_results"][0]
 
+    # Step 4b: compare price against dataset comparables
+    session["price_assessment"] = compare_price(session["selected_item"])
+
     # Step 5: suggest an outfit using the selected item and wardrobe
     session["outfit_suggestion"] = suggest_outfit(
         new_item=session["selected_item"],
         wardrobe=wardrobe,
+        profile_context=profile.get("wardrobe_summary", ""),
     )
 
     # Step 6: generate the fit card
@@ -177,7 +210,14 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         new_item=session["selected_item"],
     )
 
-    # Step 7: return the completed session
+    # Step 7: check trends if the user asked about them
+    if _is_trend_query(query):
+        session["trends"] = check_trending_styles(size=parsed.get("size"))
+
+    # Step 8: save updated profile signals to disk
+    session["profile_save"] = save_style_profile(user_id, session)
+
+    # Step 9: return the completed session
     return session
 
 
@@ -195,6 +235,7 @@ if __name__ == "__main__":
         print(f"Error: {session['error']}")
     else:
         print(f"Found: {session['selected_item']['title']}")
+        print(f"\nPrice: {session['price_assessment']}")
         print(f"\nOutfit: {session['outfit_suggestion']}")
         print(f"\nFit card: {session['fit_card']}")
 
